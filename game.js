@@ -83,6 +83,7 @@ function init() {
 
     generateCity();
     initP2P();
+       log('Game initialized');
 }
 
 function createClouds() {
@@ -100,6 +101,14 @@ function createClouds() {
         clouds.push(cloud);
         scene.add(cloud);
     }
+}
+function log(message) {
+    console.log(message);
+    const logContainer = document.getElementById('logContainer');
+    const logEntry = document.createElement('div');
+    logEntry.textContent = message;
+    logContainer.appendChild(logEntry);
+    logContainer.scrollTop = logContainer.scrollHeight;
 }
 
 function generateCity() {
@@ -430,14 +439,21 @@ function generateCityChunk(chunkX, chunkZ) {
             }
         }
     }
+
+    log(`Generated city chunk at (${chunkX}, ${chunkZ})`);
 }
 
 // P2P Communication
+
 function initP2P() {
     peer = new Peer();
     
     peer.on('open', (id) => {
-        console.log('My peer ID is: ' + id);
+        log(`My peer ID is: ${id}`);
+    });
+
+    peer.on('error', (error) => {
+        log(`Peer error: ${error.type}`);
     });
 
     document.getElementById('createBtn').addEventListener('click', createRoom);
@@ -447,14 +463,17 @@ function initP2P() {
         conn = connection;
         setupConnection();
         showNotification('A player has joined the room!');
+        log('Incoming connection established');
     });
 }
+
 
 function createRoom() {
     isHost = true;
     const roomId = Math.random().toString(36).substr(2, 9);
     document.getElementById('roomId').textContent = `Room ID: ${roomId}`;
     showNotification('Room created. Waiting for players to join...');
+    log(`Room created with ID: ${roomId}`);
 }
 
 function joinRoom() {
@@ -462,34 +481,46 @@ function joinRoom() {
     conn = peer.connect(roomId);
     setupConnection();
     showNotification('Joining room...');
+    log(`Attempting to join room with ID: ${roomId}`);
 }
+
 
 function setupConnection() {
     conn.on('open', () => {
-        console.log('Connected to peer');
+        log('Connected to peer');
         showNotification('Connected to peer!');
         conn.on('data', (data) => {
             handlePeerData(data);
         });
     });
+
+    conn.on('close', () => {
+        log('Connection closed');
+    });
+
+    conn.on('error', (error) => {
+        log(`Connection error: ${error}`);
+    });
 }
 
 function handlePeerData(data) {
+    log(`Received data: ${JSON.stringify(data)}`);
     if (data.type === 'position') {
         updatePeerPosition(data.position);
     } else if (data.type === 'shoot') {
         createPeerLaser(data.start, data.end);
     }
 }
-
 function updatePeerPosition(position) {
     if (!peerAvatar) {
         const avatarGeometry = new THREE.SphereGeometry(0.5, 32, 32);
         const avatarMaterial = new THREE.MeshPhongMaterial({ color: 0x00ff00 });
         peerAvatar = new THREE.Mesh(avatarGeometry, avatarMaterial);
         scene.add(peerAvatar);
+        log('Peer avatar created');
     }
     peerAvatar.position.set(position.x, position.y, position.z);
+    log(`Peer position updated: ${JSON.stringify(position)}`);
 }
 
 function createPeerLaser(start, end) {
@@ -504,21 +535,23 @@ function createPeerLaser(start, end) {
 }
 
 function sendPositionUpdate() {
-    if (conn) {
+    if (conn && conn.open) {
+        const position = {
+            x: player.position.x,
+            y: player.position.y,
+            z: player.position.z
+        };
         conn.send({
             type: 'position',
-            position: {
-                x: player.position.x,
-                y: player.position.y,
-                z: player.position.z
-            }
+            position: position
         });
+        log(`Sent position update: ${JSON.stringify(position)}`);
     }
 }
 
 function sendShootEvent(start, end) {
-    if (conn) {
-        conn.send({
+    if (conn && conn.open) {
+        const data = {
             type: 'shoot',
             start: {
                 x: start.x,
@@ -530,10 +563,11 @@ function sendShootEvent(start, end) {
                 y: end.y,
                 z: end.z
             }
-        });
+        };
+        conn.send(data);
+        log(`Sent shoot event: ${JSON.stringify(data)}`);
     }
 }
-
 init();
 animate();
 

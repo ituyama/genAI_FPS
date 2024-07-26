@@ -62,6 +62,21 @@
             border-radius: 5px;
             display: none;
         }
+
+        #logContainer {
+            position: fixed;
+            top: 100px;
+            right: 10px;
+            width: 300px;
+            height: 200px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            overflow-y: scroll;
+            padding: 10px;
+            border-radius: 5px;
+        }
     </style>
 </head>
 
@@ -76,6 +91,7 @@
         <div id="roomId"></div>
     </div>
     <div id="notifications"></div>
+    <div id="logContainer"></div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/simplex-noise/2.4.0/simplex-noise.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.4.7/peerjs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.9.1/gsap.min.js"></script>
