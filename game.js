@@ -1,6 +1,5 @@
 import * as THREE from 'https://cdnjs.cloudflare.com/ajax/libs/three.js/0.167.0/three.module.js';
 
-// 以下、既存のコード
 let scene, camera, renderer, player, raycaster, gun;
 let targets = [];
 let buildings = [];
@@ -313,6 +312,20 @@ function updateScore() {
     document.getElementById('score').textContent = `Score: ${score}`;
 }
 
+function updateCoordinates() {
+    const coordsElement = document.getElementById('coordinates');
+    coordsElement.textContent = `Coordinates: X: ${player.position.x.toFixed(2)}, Y: ${player.position.y.toFixed(2)}, Z: ${player.position.z.toFixed(2)}`;
+}
+
+function showNotification(message) {
+    const notificationElement = document.getElementById('notifications');
+    notificationElement.textContent = message;
+    notificationElement.style.display = 'block';
+    setTimeout(() => {
+        notificationElement.style.display = 'none';
+    }, 3000);
+}
+
 function animate() {
     requestAnimationFrame(animate);
 
@@ -352,7 +365,7 @@ function animate() {
     // Remove far away buildings and floors
     buildings = buildings.filter(building => {
         if (building.position.distanceTo(player.position) > VIEW_DISTANCE) {
-            scene.remove(building);
+scene.remove(building);
             return false;
         }
         return true;
@@ -371,6 +384,7 @@ function animate() {
         createTarget();
     }
 
+    updateCoordinates();
     sendPositionUpdate();
 
     renderer.render(scene, camera);
@@ -432,6 +446,7 @@ function initP2P() {
     peer.on('connection', (connection) => {
         conn = connection;
         setupConnection();
+        showNotification('A player has joined the room!');
     });
 }
 
@@ -439,17 +454,20 @@ function createRoom() {
     isHost = true;
     const roomId = Math.random().toString(36).substr(2, 9);
     document.getElementById('roomId').textContent = `Room ID: ${roomId}`;
+    showNotification('Room created. Waiting for players to join...');
 }
 
 function joinRoom() {
     const roomId = document.getElementById('joinInput').value;
     conn = peer.connect(roomId);
     setupConnection();
+    showNotification('Joining room...');
 }
 
 function setupConnection() {
     conn.on('open', () => {
         console.log('Connected to peer');
+        showNotification('Connected to peer!');
         conn.on('data', (data) => {
             handlePeerData(data);
         });

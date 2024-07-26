@@ -34,6 +34,15 @@
             font-family: Arial, sans-serif;
         }
 
+        #coordinates {
+            position: fixed;
+            bottom: 10px;
+            left: 10px;
+            color: white;
+            font-size: 16px;
+            font-family: Arial, sans-serif;
+        }
+
         #p2pControls {
             position: fixed;
             top: 10px;
@@ -41,18 +50,32 @@
             color: white;
             font-family: Arial, sans-serif;
         }
+
+        #notifications {
+            position: fixed;
+            top: 50px;
+            right: 10px;
+            color: white;
+            font-family: Arial, sans-serif;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 5px;
+            display: none;
+        }
     </style>
 </head>
 
 <body>
     <div id="crosshair">+</div>
     <div id="score">Score: 0</div>
+    <div id="coordinates">Coordinates: X: 0, Y: 0, Z: 0</div>
     <div id="p2pControls">
         <button id="createBtn">Create Room</button>
         <input id="joinInput" type="text" placeholder="Room ID">
         <button id="joinBtn">Join Room</button>
         <div id="roomId"></div>
     </div>
+    <div id="notifications"></div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/simplex-noise/2.4.0/simplex-noise.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.4.7/peerjs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.9.1/gsap.min.js"></script>
