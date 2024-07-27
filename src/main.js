@@ -1,8 +1,8 @@
 import * as THREE from 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.js';
-
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
-import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-analytics.js";
-import { getFirestore, collection, doc, setDoc, updateDoc, onSnapshot, arrayUnion, getDoc } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js";
+import { createRoom, joinRoom, leaveRoom } from './room-manager.js';
+import { updatePlayerPosition, sendShootEvent } from './player-manager.js';
+import { showNotification, updateScore, updateCoordinates, log } from './ui-manager.js';
+import { createPixelTexture, generateId } from './utils.js';
 
 let scene, camera, renderer, player, raycaster, gun;
 let targets = [];
@@ -14,45 +14,13 @@ let score = 0;
 let isRunning = false;
 let isJumping = false;
 let jumpVelocity = 0;
+let otherPlayers = new Map();
 
 const CHUNK_SIZE = 100;
 const VIEW_DISTANCE = 300;
 const GRAVITY = -9.8;
 const JUMP_FORCE = 5;
 const simplex = new SimplexNoise();
-
-let peer;
-let conn;
-let isHost = false;
-let peerAvatar;
-let currentRoomId;
-
-// Firebase configuration
-const firebaseConfig = {
-  apiKey: "AIzaSyBySTi7FDFUVR_QYGYrqBTP5ys--T5ptAo",
-  authDomain: "genai-fps.firebaseapp.com",
-  projectId: "genai-fps",
-  storageBucket: "genai-fps.appspot.com",
-  messagingSenderId: "1085075777298",
-  appId: "1:1085075777298:web:a20b64e9887b0784dcf5cb",
-  measurementId: "G-P1EV9LGCSD"
-};
-// Initialize Firebase
-
-const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
-const db = getFirestore(app);
-
-function createPixelTexture(width, height, drawFunction) {
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const context = canvas.getContext('2d');
-    const imageData = context.createImageData(width, height);
-    drawFunction(imageData.data);
-    context.putImageData(imageData, 0, 0);
-    return new THREE.CanvasTexture(canvas);
-}
 
 function init() {
     scene = new THREE.Scene();
@@ -97,8 +65,16 @@ function init() {
     document.addEventListener('click', onShoot);
 
     generateCity();
-    initP2P();
+
+    document.getElementById('createBtn').addEventListener('click', createRoom);
+    document.getElementById('joinBtn').addEventListener('click', () => {
+        const roomId = document.getElementById('joinInput').value;
+        joinRoom(roomId);
+    });
+    window.addEventListener('beforeunload', leaveRoom);
+
     log('Game initialized');
+    toggleControllerVisibility();
 }
 
 function createClouds() {
@@ -116,15 +92,6 @@ function createClouds() {
         clouds.push(cloud);
         scene.add(cloud);
     }
-}
-
-function log(message) {
-    console.log(message);
-    const logContainer = document.getElementById('logContainer');
-    const logEntry = document.createElement('div');
-    logEntry.textContent = message;
-    logContainer.appendChild(logEntry);
-    logContainer.scrollTop = logContainer.scrollHeight;
 }
 
 function generateCity() {
@@ -272,8 +239,8 @@ function onShoot() {
         scene.remove(hitTarget);
         targets = targets.filter(target => target !== hitTarget);
         score += 100;
-        updateScore();
-        console.log("Target hit! Remaining targets:", targets.length);
+        updateScore(score);
+        log("Target hit! Remaining targets: " + targets.length);
 
         setTimeout(createTarget, 10000);
     }
@@ -328,24 +295,6 @@ function hitEffect(position) {
     }, 1000);
 }
 
-function updateScore() {
-    document.getElementById('score').textContent = `Score: ${score}`;
-}
-
-function updateCoordinates() {
-    const coordsElement = document.getElementById('coordinates');
-    coordsElement.textContent = `Coordinates: X: ${player.position.x.toFixed(2)}, Y: ${player.position.y.toFixed(2)}, Z: ${player.position.z.toFixed(2)}`;
-}
-
-function showNotification(message) {
-    const notificationElement = document.getElementById('notifications');
-    notificationElement.textContent = message;
-    notificationElement.style.display = 'block';
-    setTimeout(() => {
-        notificationElement.style.display = 'none';
-    }, 3000);
-}
-
 function animate() {
     requestAnimationFrame(animate);
 
@@ -361,7 +310,7 @@ function animate() {
 
     clouds.forEach(cloud => {
         cloud.position.x += 0.05;
-if (cloud.position.x > CHUNK_SIZE/2) {
+        if (cloud.position.x > CHUNK_SIZE/2) {
             cloud.position.x = -CHUNK_SIZE/2;
         }
     });
@@ -399,8 +348,12 @@ if (cloud.position.x > CHUNK_SIZE/2) {
         createTarget();
     }
 
-    updateCoordinates();
-    updatePlayerPosition();
+    updateCoordinates(player.position.x, player.position.y, player.position.z);
+    updatePlayerPosition({
+        x: player.position.x,
+        y: player.position.y,
+        z: player.position.z
+    });
 
     renderer.render(scene, camera);
 }
@@ -446,152 +399,41 @@ function generateCityChunk(chunkX, chunkZ) {
 
     log(`Generated city chunk at (${chunkX}, ${chunkZ})`);
 }
-
-// Firebase functions
-async function createRoom() {
-    const roomId = Math.random().toString(36).substr(2, 9);
-    currentRoomId = roomId;
-    isHost = true;
-    try {
-        await setDoc(doc(db, 'rooms', roomId), {
-            host: peer.id,
-            players: [peer.id],
-            created: new Date()
-        });
-        document.getElementById('roomId').textContent = `Room ID: ${roomId}`;
-        showNotification('Room created. Waiting for players to join...');
-        log(`Room created with ID: ${roomId}`);
-        watchRoom(roomId);
-    } catch (error) {
-        console.error("Error creating room: ", error);
-        showNotification('Failed to create room. Please try again.');
-    }
-}
-
-async function joinRoom() {
-    const roomId = document.getElementById('joinInput').value;
-    currentRoomId = roomId;
-    try {
-        await updateDoc(doc(db, 'rooms', roomId), {
-            players: arrayUnion(peer.id)
-        });
-        showNotification('Joined room successfully!');
-        log(`Joined room with ID: ${roomId}`);
-        watchRoom(roomId);
-    } catch (error) {
-        console.error("Error joining room: ", error);
-        showNotification('Failed to join room. Please check the Room ID and try again.');
-    }
-}
-
-function watchRoom(roomId) {
-    onSnapshot(doc(db, 'rooms', roomId), (doc) => {
-        if (doc.exists()) {
-            const data = doc.data();
-            updatePlayersInRoom(data.players);
-        } else {
-            console.log("Room does not exist!");
-        }
-    });
-}
-
-function updatePlayersInRoom(players) {
-    // Update the game state based on players in the room
-    // This could involve creating or removing player avatars
-    log(`Players in room: ${players.join(', ')}`);
-}
-
-async function updatePlayerPosition() {
-    if (currentRoomId) {
-        const position = {
-            x: player.position.x,
-            y: player.position.y,
-            z: player.position.z
-        };
-        try {
-            await updateDoc(doc(db, 'rooms', currentRoomId), {
-                [`playerPositions.${peer.id}`]: position
-            });
-        } catch (error) {
-            console.error("Error updating position: ", error);
-        }
-    }
-}
-
-function initP2P() {
-    peer = new Peer(null, {
-        host: '/',
-        port: 9000,
-        path: '/myapp'
-    });
+function toggleControllerVisibility() {
+    const controller = document.getElementById('controller');
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     
-    peer.on('open', (id) => {
-        log(`My peer ID is: ${id}`);
-        document.getElementById('myPeerId').textContent = `Your Peer ID: ${id}`;
-    });
-
-    peer.on('error', (error) => {
-        log(`Peer error: ${error.type} - ${error.message}`);
-    });
-
-    document.getElementById('createBtn').addEventListener('click', createRoom);
-    document.getElementById('joinBtn').addEventListener('click', joinRoom);
-
-    peer.on('connection', (connection) => {
-        conn = connection;
-        setupConnection();
-        showNotification('A player has joined the room!');
-        log('Incoming connection established');
-    });
-}
-
-function setupConnection() {
-    if (!conn) {
-        log('Connection object is null');
-        return;
+    if (isMobile) {
+        controller.style.display = 'flex';
+    } else {
+        controller.style.display = 'none';
     }
-
-    conn.on('open', () => {
-        log('Connected to peer');
-        showNotification('Connected to peer!');
-        conn.on('data', (data) => {
-            handlePeerData(data);
-        });
-    });
-
-    conn.on('close', () => {
-        log('Connection closed');
-    });
-
-    conn.on('error', (error) => {
-        log(`Connection error: ${error}`);
-    });
+}
+function createPlayerModel() {
+    const geometry = new THREE.BoxGeometry(1, 2, 1);
+    const material = new THREE.MeshPhongMaterial({ color: 0x00ff00 });
+    return new THREE.Mesh(geometry, material);
 }
 
-function handlePeerData(data) {
-    log(`Received data: ${JSON.stringify(data)}`);
-    if (data.type === 'position') {
-        updatePeerPosition(data.id, data.position);
-    } else if (data.type === 'shoot') {
-        createPeerLaser(data.start, data.end);
+export function updatePeerPosition(id, position) {
+    let playerModel = otherPlayers.get(id);
+    if (!playerModel) {
+        playerModel = createPlayerModel();
+        scene.add(playerModel);
+        otherPlayers.set(id, playerModel);
+    }
+    playerModel.position.set(position.x, position.y, position.z);
+}
+
+export function removePeerFromScene(id) {
+    const playerModel = otherPlayers.get(id);
+    if (playerModel) {
+        scene.remove(playerModel);
+        otherPlayers.delete(id);
     }
 }
 
-function updatePeerPosition(peerId, position) {
-    let peerAvatar = scene.getObjectByName(`player_${peerId}`);
-    if (!peerAvatar) {
-        const avatarGeometry = new THREE.SphereGeometry(0.5, 32, 32);
-        const avatarMaterial = new THREE.MeshPhongMaterial({ color: 0x00ff00 });
-        peerAvatar = new THREE.Mesh(avatarGeometry, avatarMaterial);
-        peerAvatar.name = `player_${peerId}`;
-        scene.add(peerAvatar);
-        log('Peer avatar created');
-    }
-    peerAvatar.position.set(position.x, position.y, position.z);
-    log(`Peer position updated: ${JSON.stringify(position)}`);
-}
-
-function createPeerLaser(start, end) {
+export function createPeerLaser(start, end) {
     const geometry = new THREE.BufferGeometry().setFromPoints([
         new THREE.Vector3(start.x, start.y, start.z),
         new THREE.Vector3(end.x, end.y, end.z)
@@ -602,24 +444,12 @@ function createPeerLaser(start, end) {
     setTimeout(() => scene.remove(laserLine), 100);
 }
 
-function sendShootEvent(start, end) {
-    if (conn && conn.open) {
-        const data = {
-            type: 'shoot',
-            start: {
-                x: start.x,
-                y: start.y,
-                z: start.z
-            },
-            end: {
-                x: end.x,
-                y: end.y,
-                z: end.z
-            }
-        };
-        conn.send(data);
-        log(`Sent shoot event: ${JSON.stringify(data)}`);
-    }
+window.addEventListener('resize', onWindowResize, false);
+
+function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
 init();
@@ -627,4 +457,20 @@ animate();
 
 renderer.domElement.addEventListener('click', () => {
     renderer.domElement.requestPointerLock();
+});
+
+document.addEventListener('pointerlockchange', onPointerLockChange, false);
+
+function onPointerLockChange() {
+    if (document.pointerLockElement === renderer.domElement) {
+        document.addEventListener('mousemove', onMouseMove, false);
+    } else {
+        document.removeEventListener('mousemove', onMouseMove, false);
+    }
+}
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'c' || event.key === 'C') {
+        const controller = document.getElementById('controller');
+        controller.style.display = controller.style.display === 'none' ? 'flex' : 'none';
+    }
 });
