@@ -444,16 +444,20 @@ function generateCityChunk(chunkX, chunkZ) {
 }
 
 // P2P Communication
-
 function initP2P() {
-    peer = new Peer();
+    peer = new Peer(null, {
+        host: 'your-peerjs-server.com',
+        port: 9000,
+        path: '/myapp'
+    });
     
     peer.on('open', (id) => {
         log(`My peer ID is: ${id}`);
+        document.getElementById('myPeerId').textContent = `Your Peer ID: ${id}`;
     });
 
     peer.on('error', (error) => {
-        log(`Peer error: ${error.type}`);
+        log(`Peer error: ${error.type} - ${error.message}`);
     });
 
     document.getElementById('createBtn').addEventListener('click', createRoom);
@@ -467,10 +471,9 @@ function initP2P() {
     });
 }
 
-
 function createRoom() {
     isHost = true;
-    const roomId = Math.random().toString(36).substr(2, 9);
+    const roomId = peer.id; // Use the peer ID as the room ID
     document.getElementById('roomId').textContent = `Room ID: ${roomId}`;
     showNotification('Room created. Waiting for players to join...');
     log(`Room created with ID: ${roomId}`);
@@ -479,27 +482,32 @@ function createRoom() {
 function joinRoom() {
     const roomId = document.getElementById('joinInput').value;
     conn = peer.connect(roomId);
-    setupConnection();
-    showNotification('Joining room...');
-    log(`Attempting to join room with ID: ${roomId}`);
-}
-
-
-function setupConnection() {
+    
     conn.on('open', () => {
-        log('Connected to peer');
-        showNotification('Connected to peer!');
-        conn.on('data', (data) => {
-            handlePeerData(data);
-        });
-    });
-
-    conn.on('close', () => {
-        log('Connection closed');
+        setupConnection();
+        showNotification('Connected to room!');
+        log(`Successfully joined room with ID: ${roomId}`);
     });
 
     conn.on('error', (error) => {
         log(`Connection error: ${error}`);
+        showNotification('Failed to join room. Please check the Room ID and try again.');
+    });
+}
+
+function setupConnection() {
+    if (!conn) {
+        log('Connection object is null');
+        return;
+    }
+
+    conn.on('data', (data) => {
+        handlePeerData(data);
+    });
+
+    conn.on('close', () => {
+        log('Connection closed');
+        showNotification('Disconnected from peer');
     });
 }
 
